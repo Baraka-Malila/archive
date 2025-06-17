@@ -1,135 +1,72 @@
-
 # Archives Web App API Backend Documentation
 
 ## Overview
 This backend powers the Archives Web App, providing a robust API for managing users, courses, departments, assignments, resources, and submissions in an academic context. It is built with Django and Django REST Framework, supporting role-based access for students, lecturers, and class representatives.
 
-
 ## API Endpoints
 
-### Authentication
+### Authentication (Centralized in Custom App)
 - `POST /api/auth/login/`: User login
-- `POST /api/auth/register/`: Student registration
+- `POST /api/auth/logout/`: User logout
 - `GET /api/auth/whoami/`: Get current user info
 - `GET /api/auth/role/`: Get user role
+- `GET /api/auth/csrf/`: Get CSRF token
+- `GET /api/auth/check/`: Check authentication status
+- `GET /api/auth/session/`: Get session information
 
 ### User Management
 - `GET /api/users/`: List users (filtered by username)
 - `GET /api/users/profile/`: Get user profile
-- `PUT/PATCH /api/users/update/`: Update user profile
+- `PUT /api/users/update/`: Update user profile
 - `DELETE /api/users/delete/`: Delete user account
 
-### Resources
+### Student API
+- `GET /api/student/student_dashboard/`: Student dashboard
+- `PUT /api/student/update/`: Update student profile
+- `DELETE /api/student/delete/`: Delete student account
+- `GET /api/student/submissions/`: List student submissions
+- `POST /api/student/submissions/`: Create submission
+- `GET /api/student/submissions/<id>/`: Get submission details
+- `GET /api/student/resources/`: List available resources
+- `GET /api/student/resources/download/<id>/`: Download resource file
+
+### Lecturer API
+- `GET /api/lecture/lecture_dashboard/`: Lecturer dashboard
+- `GET /api/lecture/retrieve_user/<username>/`: Get lecturer profile
+- `PUT /api/lecture/update/`: Update lecturer profile
+- `DELETE /api/lecture/delete/`: Delete lecturer account
+- `GET /api/lecture/assignments/`: List assignments
+- `POST /api/lecture/assignments/`: Create assignment
+- `GET /api/lecture/assignments/<id>/`: Get assignment details
+- `PUT /api/lecture/assignments/<id>/`: Update assignment
+- `DELETE /api/lecture/assignments/<id>/`: Delete assignment
+- `GET /api/lecture/submissions/`: List student submissions
+- `PATCH /api/lecture/submissions/<id>/feedback/`: Provide submission feedback
+
+### Resources API
 - `GET /api/resources/`: List resources
 - `POST /api/resources/`: Create resource (Lecturer/CR only)
 - `GET /api/resources/<id>/`: Get resource details
-- `PUT/PATCH /api/resources/<id>/`: Update resource (Lecturer/CR only)
+- `PUT /api/resources/<id>/`: Update resource (Lecturer/CR only)
 - `DELETE /api/resources/<id>/`: Delete resource (Lecturer/CR only)
 - `GET /api/resources/download/<id>/`: Download resource file
 
-### Assignments
-- `GET /api/assignments/`: List assignments
-- `POST /api/assignments/`: Create assignment (Lecturer only)
-- `GET /api/assignments/<id>/`: Get assignment details
-- `PUT/PATCH /api/assignments/<id>/`: Update assignment (Lecturer only)
-- `DELETE /api/assignments/<id>/`: Delete assignment (Lecturer only)
+## Authentication & Authorization
 
-### Submissions
-- `GET /api/submissions/`: List student submissions
-- `POST /api/submissions/`: Create submission
-- `GET /api/submissions/<id>/`: Get submission details
+### Session Authentication
+- All endpoints use Django's session authentication
+- CSRF protection is enabled for all POST/PUT/DELETE requests
+- Session cookies are HTTP-only and SameSite=Lax
 
-### Student API
+### Role-Based Access
+- Students: Can access student dashboard, submissions, and resources
+- Lecturers: Can manage assignments, provide feedback, and manage resources
+- Class Representatives: Can manage resources and view submissions
 
-#### Authentication & Session
-- **Endpoint**: `GET /api/auth/session/`
-- **Authentication**: Required
-- **Features**: Get current session information
-
-#### User Profile
-- **Endpoint**: `GET /api/auth/whoami/`
-- **Authentication**: Required
-- **Features**: Get current user's profile information
-- **Response Format**:
-  ```json
-  {
-    "full_name": "string",
-    "username": "string",
-    "email": "string"
-  }
-  ```
-
-#### Student-Specific View
-- **Endpoint**: `GET /api/student/`
-- **Authentication**: Required
-- **Permissions**: Student role only
-- **Features**: Get student-specific information and dashboard data
-
-#### Assignment Submissions
-- **Endpoint**: `GET/POST /api/submissions/`
-- **Authentication**: Required
-- **Permissions**: Student role only
-- **Features**:
-  - List all submissions for the current student
-  - Create new submission
-  - Filter by assignment title
-  - Order by submission date
-- **Request Body (POST)**:
-  ```json
-  {
-    "assignment": "integer",
-    "file": "file",
-    "attempt_number": "integer (optional)"
-  }
-  ```
-- **Response Format**:
-  ```json
-  {
-    "id": "integer",
-    "assignment": "integer",
-    "student": "integer",
-    "submission_date": "datetime",
-    "score": "integer",
-    "feedback": "string",
-    "is_graded": "boolean",
-    "attempt_number": "integer",
-    "file_checksum": "string"
-  }
-  ```
-
-#### Submission Details
-- **Endpoint**: `GET /api/submissions/<id>/`
-- **Authentication**: Required
-- **Permissions**: Student role only
-- **Features**: Get detailed information about a specific submission
-
-#### Resource Access
-- **Endpoint**: `GET /api/student/resources/`
-- **Authentication**: Required
-- **Permissions**: Student role only
-- **Features**:
-  - List all active resources available to the student
-  - Filter by resource type, course name, assignment title
-  - Order by upload date
-- **Response Format**:
-  ```json
-  {
-    "id": "integer",
-    "resource_type": "string",
-    "course_id": "string",
-    "assignment": "integer",
-    "resource_url": "string",
-    "resource_file": "string (URL)",
-    "description": "string",
-    "uploaded_at": "datetime"
-  }
-  ```
-
-#### Resource Download
-- **Endpoint**: `GET /api/student/resources/download/<id>/`
-- **Authentication**: Required
-- **Permissions**: Student role only
-- **Features**: Download resource file with proper access control
+### Permissions
+- `IsAuthenticated`: Required for all endpoints
+- `IsLecturerOrClassRep`: Required for resource management
+- Role-specific permissions are enforced at the view level
 
 ## Data Models
 

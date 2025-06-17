@@ -109,19 +109,11 @@ class WhoAmIView(APIView):
 
 
 class StudentOnlyView(APIView):
+    authentication_classes = [SessionAuthentication]
     permission_classes = [IsAuthenticated]
 
-    def get(self, request, format=None):
-        try:
-            user = request.user
-            user = UserSerializer(user)
-
-            return Response({"user": user.data}, status=status.HTTP_200_OK)
-        except:
-            return Response(
-                {"error": "Something went wrong when trying to load user"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+    def get(self, request):
+        return JsonResponse({"message": "This is a student-only view"})
 
 
 def get_user_data(request):
@@ -154,16 +146,15 @@ def registerView(request):
     return rest_exceptions.AuthenticationFailed("Invalid credentials!")
 
 
-@rest_decorators.api_view(['PUT', 'PATCH'])
+@rest_decorators.api_view(['PUT'])
 @rest_decorators.permission_classes([rest_permissions.IsAuthenticated])
 def update_account(request):
     user = request.user
     serializer = UpdateSerializer(user, data=request.data, partial=True)
-
     if serializer.is_valid():
         serializer.save()
         return Response(serializer.data)
-    return Response(serializer.errors, status=status.HTTP_404_NOT_FOUND)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 @rest_decorators.api_view(['DELETE'])
@@ -176,53 +167,44 @@ def delete_account(request):
 
 class StudentAssignmentSubmissionListCreateView(generics.ListCreateAPIView):
     serializer_class = AssignmentSubmissionSerializer
-    permission_classes = [rest_permissions.IsAuthenticated]
-    filter_backends = [filters.OrderingFilter, filters.SearchFilter]
-    ordering_fields = ['submission_date']
-    search_fields = ['assignment__title']
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [SessionAuthentication]
 
     def get_queryset(self):
-        return AssignmentSubmissions.objects.filter(student__user=self.request.user)
+        return AssignmentSubmissions.objects.filter(student=self.request.user)
 
     def perform_create(self, serializer):
-        student = self.request.user.student
-        serializer.save(student=student)
+        serializer.save(student=self.request.user)
 
 
-class StudentAssignmentSubmissionDetailView(generics.RetrieveAPIView):
+class StudentAssignmentSubmissionDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = AssignmentSubmissionSerializer
-    permission_classes = [rest_permissions.IsAuthenticated]
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [SessionAuthentication]
 
     def get_queryset(self):
-        return AssignmentSubmissions.objects.filter(student__user=self.request.user)
+        return AssignmentSubmissions.objects.filter(student=self.request.user)
 
 
 class StudentResourceListView(generics.ListAPIView):
     serializer_class = ResourceSerializer
-    permission_classes = [rest_permissions.IsAuthenticated]
-    filter_backends = [filters.OrderingFilter, filters.SearchFilter]
-    ordering_fields = ['uploaded_at']
-    search_fields = ['resource_type', 'course_id__course_name', 'assignment__title']
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [SessionAuthentication]
 
     def get_queryset(self):
-        # Optionally filter by group, course, etc. for the student
-        return resources.objects.filter(is_active=True)
+        return resources.objects.all()
 
 
-class ResourceDownloadView(generics.GenericAPIView):
-    serializer_class = ResourceSerializer
-    permission_classes = [rest_permissions.IsAuthenticated]
+class ResourceDownloadView(generics.RetrieveAPIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [SessionAuthentication]
 
     def get(self, request, pk):
         try:
-            resource = resources.objects.get(pk=pk, is_active=True)
-            if not resource.resource_file:
-                raise Http404
-            file_path = resource.resource_file.path
-            file_handle = open(file_path, 'rb')
-            response = FileResponse(file_handle, as_attachment=True, filename=os.path.basename(file_path))
-            return response
+            resource = resources.objects.get(pk=pk)
+            file_path = os.path.join(settings.MEDIA_ROOT, str(resource.resource_file))
+            if os.path.exists(file_path):
+                return FileResponse(open(file_path, 'rb'), as_attachment=True)
+            raise Http404("File not found")
         except resources.DoesNotExist:
-            raise Http404
-        except Exception:
-            raise Http404
+            raise Http404("Resource not found")

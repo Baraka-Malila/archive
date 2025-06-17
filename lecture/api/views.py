@@ -100,65 +100,23 @@ class WhoAmIView(APIView):
         return JsonResponse(data, safe=False)
 
 
-class LectureView(viewsets.ModelViewSet):
-    queryset = User.objects.all()
-    serializer_class = UserSerializer
-    lookup_field = 'username'
-
-    @action(detail=False, methods=['GET'])
-    def by_username(self, request):
-        username = request.query_params.get('username')
-        user = User.objects.get(username=username)
-        serializer = self.get_serializer(user)
-        return Response(serializer.data)
-
-
 class LectureOnlyView(APIView):
+    authentication_classes = [SessionAuthentication]
     permission_classes = [IsAuthenticated]
 
-    def get(self, request, format=None):
-        try:
-            user = request.user
-            user = UserSerializer(user)
-
-            return Response({"user": user.data}, status=status.HTTP_200_OK)
-        except:
-            return Response(
-                {"error": "Something went wrong when trying to load user"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+    def get(self, request):
+        return JsonResponse({"message": "This is a lecture-only view"})
 
 
-@rest_decorators.api_view(["POST"])
-@rest_decorators.permission_classes([rest_permissions.AllowAny])
-# @method_decorator(csrf_protect, name='dispatch')
-def registerView(request):
-    serializer = LectureSerializer(data=request.data)
-    serializer.is_valid(raise_exception=True)
-
-    user = serializer.save()
-
-    if user is not None:
-        return response.Response(
-            {
-                "user": UserSerializer(user).data,
-                "message": "Account created successfully",
-            }
-        )
-
-    return rest_exceptions.AuthenticationFailed("Invalid credentials!")
-
-
-@rest_decorators.api_view(['PUT', 'PATCH'])
+@rest_decorators.api_view(['PUT'])
 @rest_decorators.permission_classes([rest_permissions.IsAuthenticated])
 def update_account(request):
     user = request.user
     serializer = UpdateSerializer(user, data=request.data, partial=True)
-
     if serializer.is_valid():
         serializer.save()
         return Response(serializer.data)
-    return Response(serializer.errors, status=status.HTTP_404_NOT_FOUND)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 @rest_decorators.api_view(['DELETE'])
@@ -169,66 +127,56 @@ def delete_account(request):
     return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-class IsLecturer(permissions.BasePermission):
-    def has_permission(self, request, view):
-        return request.user.is_authenticated and request.user.role == 'lecture'
+class LectureView(viewsets.ModelViewSet):
+    serializer_class = UserSerializer
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [SessionAuthentication]
+    queryset = User.objects.filter(role='lecture')
+
+    def retrieve(self, request, *args, **kwargs):
+        username = kwargs.get('username')
+        try:
+            user = User.objects.get(username=username, role='lecture')
+            serializer = self.get_serializer(user)
+            return Response(serializer.data)
+        except User.DoesNotExist:
+            return Response({"error": "Lecture not found"}, status=status.HTTP_404_NOT_FOUND)
 
 
-# Assignment CRUD
 class AssignmentListCreateView(generics.ListCreateAPIView):
     serializer_class = AssignmentSerializer
-    filter_backends = [filters.OrderingFilter, filters.SearchFilter]
-    ordering_fields = ['due_date', 'created_at']
-    search_fields = ['title', 'course_id__course_name']
-
-    def get_permissions(self):
-        if self.request.method == 'POST':
-            return [IsLecturer()]
-        return [permissions.IsAuthenticated()]
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [SessionAuthentication]
 
     def get_queryset(self):
-        # Only assignments created by this lecturer
-        return Assignments.objects.filter(created_by=self.request.user)
+        return Assignments.objects.filter(lecture=self.request.user)
 
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
+        serializer.save(lecture=self.request.user)
 
 
 class AssignmentRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = AssignmentSerializer
-    queryset = Assignments.objects.all()
-
-    def get_permissions(self):
-        if self.request.method in ['PUT', 'PATCH', 'DELETE']:
-            return [IsLecturer()]
-        return [permissions.IsAuthenticated()]
-
-
-# Assignment Submissions (view and feedback)
-class AssignmentSubmissionListView(generics.ListAPIView):
-    serializer_class = AssignmentSubmissionSerializer
-    filter_backends = [filters.OrderingFilter, filters.SearchFilter]
-    ordering_fields = ['submission_date']
-    search_fields = ['student__user__username', 'assignment__title']
-    permission_classes = [IsLecturer]
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [SessionAuthentication]
 
     def get_queryset(self):
-        # All submissions for assignments created by this lecturer
-        return AssignmentSubmissions.objects.filter(assignment__created_by=self.request.user)
+        return Assignments.objects.filter(lecture=self.request.user)
+
+
+class AssignmentSubmissionListView(generics.ListAPIView):
+    serializer_class = AssignmentSubmissionSerializer
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [SessionAuthentication]
+
+    def get_queryset(self):
+        return AssignmentSubmissions.objects.filter(assignment__lecture=self.request.user)
 
 
 class AssignmentSubmissionFeedbackView(generics.UpdateAPIView):
     serializer_class = FeedbackSerializer
-    queryset = AssignmentSubmissions.objects.all()
-    permission_classes = [IsLecturer]
-    http_method_names = ['patch']
-    
-    def patch(self, request, *args, **kwargs):
-        return self.partial_update(request, *args, **kwargs)
-    
-    def perform_update(self, serializer):
-        # Automatically mark as graded when feedback is provided
-        instance = serializer.save()
-        if instance.feedback or instance.score is not None:
-            instance.is_graded = True
-            instance.save()
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [SessionAuthentication]
+
+    def get_queryset(self):
+        return AssignmentSubmissions.objects.filter(assignment__lecture=self.request.user)
